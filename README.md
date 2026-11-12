@@ -8,6 +8,7 @@ a 20x4 HD44780 LCD with PCF8574 I2C backpack and an STM32F103RB.
 - Phase offset in 11.25° steps
 - Output on/off (AD9850 power-down)
 - Linear frequency sweep (up or down), period 0.1 s – 60 s
+- Settings are saved to flash and restored at power-up
 - Outputs of the AD9850 module: **sine** on ZOUT1/ZOUT2, **square** on QOUT1/QOUT2
   (square duty cycle is set by the blue trimmer on the module). The AD9850 cannot
   generate triangle/sawtooth.
@@ -57,6 +58,16 @@ Items: Output, Phase, Sweep, Sw start, Sw stop, Sw time, Exit
 - Press and turn while editing Sw start / Sw stop: change the step
 - Long press: confirm edit, or leave the menu
 
+## Saved settings
+All settings (frequency, step, phase, output, sweep start/stop/time, sweep on/off)
+are saved to flash automatically 3 s after the last knob or button action, and
+restored at power-up. Hold the encoder button while powering up to restore the
+defaults (the splash screen shows "Defaults restored").
+
+Storage uses the last 1 KB page of the first 64 KB (0x0800FC00), split into
+32 slots, so the page is erased only once per 32 saves. For that reason the
+linker script limits program flash to 63 KB.
+
 LCD size is set by `LCD_COLS` / `LCD_ROWS` in `Core/Inc/I2C_LCD.h` (layout is designed for 20x4).
 
 ## Tuning
@@ -77,3 +88,4 @@ In `Core/Inc/Rotary_Sw.h`:
 - `Core/Src/I2C_LCD.c` – LCD driver
 - `Core/Src/Rotary_Sw.c` – encoder + button, polled from SysTick (1 ms)
 - `Core/Src/FuncGen.c` – user interface and sweep logic
+- `Core/Src/Flash_Store.c` – wear-levelled settings storage in flash

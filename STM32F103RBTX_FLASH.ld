@@ -1,5 +1,5 @@
 /*
- * Linker script for STM32F103RB (128 KB Flash, 20 KB RAM) - GCC / STM32CubeIDE
+ * Linker script for STM32F103RB (20 KB RAM; flash limited to 63 KB, see MEMORY) - GCC / STM32CubeIDE
  */
 
 ENTRY(Reset_Handler)
@@ -12,7 +12,9 @@ _Min_Stack_Size = 0x400;
 MEMORY
 {
   RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 20K
-  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 128K
+  /* 63K: the page at 0x0800FC00 (last 1 KB of 64 KB) holds saved settings,
+     see Core/Inc/Flash_Store.h. Also fits the 64 KB STM32F103C8 (Blue Pill). */
+  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 63K
 }
 
 SECTIONS

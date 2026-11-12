@@ -5,6 +5,7 @@
 #include "AD9850.h"
 #include "I2C_LCD.h"
 #include "Rotary_Sw.h"
+#include "Flash_Store.h"
 
 #define FG_MAX_FREQ        AD_MAX_FREQ
 #define FG_MAX_DIGIT       7U    /* 10^7 = 10 MHz step */
@@ -12,6 +13,8 @@
 #define FG_SWEEP_LCD_MS    500U  /* LCD refresh rate while sweeping */
 #define FG_SWT_MIN         1U    /* sweep time, units of 0.1 s */
 #define FG_SWT_MAX         600U
+#define FG_SAVE_DELAY_MS   3000U /* save settings this long after the last input */
+#define FG_SET_VERSION     1U    /* bump when FG_Settings changes */
 
 typedef enum { SCR_MAIN = 0, SCR_MENU } FG_Screen;
 
@@ -42,7 +45,7 @@ typedef struct
 	uint8_t  sweep_on;
 } FG_Settings;
 
-static FG_Settings s_set = {
+static const FG_Settings k_defaults = {
 	1000U,   /* freq */
 	100U,    /* sw_start */
 	10000U,  /* sw_stop */
@@ -52,6 +55,11 @@ static FG_Settings s_set = {
 	1U,      /* out_on */
 	0U       /* sweep_on */
 };
+
+static FG_Settings s_set;
+static FG_Settings s_saved;           /* copy of what is in flash */
+static uint8_t     s_save_pending = 0;
+static uint32_t    s_last_input = 0;
 
 static FG_Screen s_screen = SCR_MAIN;
 static uint8_t   s_menu_idx = 0;
@@ -148,6 +156,54 @@ static uint8_t shift_digit(uint8_t digit, int16_t d)
 static uint8_t is_freq_item(uint8_t idx)
 {
 	return (idx == MI_SW_START) || (idx == MI_SW_STOP);
+}
+
+/* ------------------------------------------------------------------------ */
+
+/* Reject records with out-of-range values (e.g. from an older layout) */
+static uint8_t settings_valid(const FG_Settings *p)
+{
+	return (p->freq <= FG_MAX_FREQ) && (p->sw_start <= FG_MAX_FREQ) &&
+	       (p->sw_stop <= FG_MAX_FREQ) &&
+	       (p->sw_time_ds >= FG_SWT_MIN) && (p->sw_time_ds <= FG_SWT_MAX) &&
+	       (p->phase < AD_PHASE_STEPS) && (p->digit <= FG_MAX_DIGIT) &&
+	       (p->out_on <= 1U) && (p->sweep_on <= 1U);
+}
+
+/* Load settings from flash; defaults if none stored, invalid, or 'force_defaults' */
+static void settings_load(uint8_t force_defaults)
+{
+	FG_Settings tmp;
+
+	memcpy(&s_set, &k_defaults, sizeof(s_set));
+	if (!force_defaults && FS_Load(&tmp, sizeof(tmp), FG_SET_VERSION) && settings_valid(&tmp))
+	{
+		memcpy(&s_set, &tmp, sizeof(s_set));
+		memcpy(&s_saved, &s_set, sizeof(s_saved));
+		return;
+	}
+	/* Nothing usable in flash (or reset requested): store defaults later */
+	memset(&s_saved, 0xFF, sizeof(s_saved));
+	s_save_pending = 1;
+	s_last_input = HAL_GetTick();
+}
+
+/* Write settings once the user has stopped changing them for FG_SAVE_DELAY_MS */
+static void settings_autosave(uint32_t now)
+{
+	if (!s_save_pending || (now - s_last_input) < FG_SAVE_DELAY_MS)
+	{
+		return;
+	}
+	s_save_pending = 0;
+	if (memcmp(&s_set, &s_saved, sizeof(s_set)) == 0)
+	{
+		return;
+	}
+	if (FS_Save(&s_set, sizeof(s_set), FG_SET_VERSION) == HAL_OK)
+	{
+		memcpy(&s_saved, &s_set, sizeof(s_saved));
+	}
 }
 
 /* ------------------------------------------------------------------------ */
@@ -537,6 +593,8 @@ static void render(void)
 void FG_Init(I2C_HandleTypeDef *hi2c)
 {
 	AD_CFG ad_cfg;
+	uint8_t reset;
+
 	ad_cfg.W_CLK_PORT = W_CLK_GPIO_Port;
 	ad_cfg.W_CLK_PIN  = W_CLK_Pin;
 	ad_cfg.FU_FD_PORT = FU_UD_GPIO_Port;
@@ -547,12 +605,17 @@ void FG_Init(I2C_HandleTypeDef *hi2c)
 	AD_Init(&ad_cfg);
 	RS_Init();
 
+	/* Holding the encoder button at power-up restores the default settings */
+	reset = (HAL_GPIO_ReadPin(BTN_PUSH_GPIO_Port, BTN_PUSH_Pin) ==
+	         (RS_BTN_ACTIVE_LEVEL ? GPIO_PIN_SET : GPIO_PIN_RESET));
+	settings_load(reset);
+
 	lcd_init(hi2c, SLAVE_ADDRESS_LCD);
 	lcd_print_line(0, "  DDS Function Gen");
 	lcd_print_line(1, "   AD9850 + STM32");
 	lcd_print_line(2, "  0 Hz ... 40 MHz");
-	lcd_print_line(3, "  Sine / Square");
-	HAL_Delay(1200);
+	lcd_print_line(3, reset ? " Defaults restored" : "  Sine / Square");
+	HAL_Delay(reset ? 2000 : 1200);
 
 	memset(s_lcd_cache, 0, sizeof(s_lcd_cache)); /* force full redraw */
 	(void)RS_GetDelta();                         /* drop input made during splash */
@@ -572,6 +635,8 @@ void FG_Task(void)
 
 	if (d != 0 || hd != 0 || b != RS_BTN_NONE)
 	{
+		s_save_pending = 1;
+		s_last_input = HAL_GetTick();
 		if (s_screen == SCR_MAIN)
 		{
 			handle_main(d, hd, b);
@@ -585,6 +650,8 @@ void FG_Task(void)
 	fg_sweep_task();
 
 	now = HAL_GetTick();
+	settings_autosave(now);
+
 	if (s_set.sweep_on && s_set.out_on && s_screen == SCR_MAIN &&
 	    (now - s_lcd_last) >= FG_SWEEP_LCD_MS)
 	{

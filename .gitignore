@@ -21,3 +21,12 @@
 .metadata/
 Thumbs.db
 desktop.ini
+
+# KiCad
+*-backups/
+fp-info-cache
+*.kicad_prl
+*.lck
+Hardware/**/*.dsn
+Hardware/**/*.ses
+__pycache__/

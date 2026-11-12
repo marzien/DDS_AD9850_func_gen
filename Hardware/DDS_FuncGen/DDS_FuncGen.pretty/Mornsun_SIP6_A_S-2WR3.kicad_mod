@@ -1,0 +1,160 @@
+(footprint "Mornsun_SIP6_A_S-2WR3"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Mornsun A_S-2WR3 dual output SIP (pins 1,2,4,5,6)")
+	(tags "Mornsun_SIP6_A_S-2WR3")
+	(property "Reference" "REF**"
+		(at 7.6 -4.3 0)
+		(layer "F.SilkS")
+		(uuid "4864b5e7-af74-59ed-9cd7-3dad46c48a78")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "Mornsun_SIP6_A_S-2WR3"
+		(at 7.6 5.5 0)
+		(layer "F.Fab")
+		(uuid "9e3266e2-aed3-598e-8c3c-75d0adaca85c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(pad "1" thru_hole rect
+		(at 0 0)
+		(size 1.6 1.6)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "a902e809-7a3b-5ea6-bdff-c9d090ff561f")
+	)
+	(fp_text user "Vin"
+		(at 0 2.6 90)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+		(uuid "dcd04930-8f8c-5e43-a652-524be1d12522")
+	)
+	(pad "2" thru_hole circle
+		(at 2.54 0)
+		(size 1.6 1.6)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "bfd820ce-4dcc-5073-81e8-4ff15ab5d8cd")
+	)
+	(fp_text user "GND"
+		(at 2.54 2.6 90)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+		(uuid "565caad2-1fbd-5719-9f53-40d7094515b0")
+	)
+	(pad "4" thru_hole circle
+		(at 7.62 0)
+		(size 1.6 1.6)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "935d61ef-03e1-5397-877d-77a5b0621001")
+	)
+	(fp_text user "-Vo"
+		(at 7.62 2.6 90)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+		(uuid "a8f00d95-4ed5-5c35-93a5-1a1e9531d7bf")
+	)
+	(pad "5" thru_hole circle
+		(at 10.16 0)
+		(size 1.6 1.6)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "855dcf19-27fe-5693-8c9e-c3f1e953ee02")
+	)
+	(fp_text user "0V"
+		(at 10.16 2.6 90)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+		(uuid "7d8da59c-f0c2-5043-9506-2f0dfaecc868")
+	)
+	(pad "6" thru_hole circle
+		(at 12.7 0)
+		(size 1.6 1.6)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "97cd94a6-19e7-5302-af3b-7308e443c622")
+	)
+	(fp_text user "+Vo"
+		(at 12.7 2.6 90)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+		(uuid "6527b8c8-5353-5553-b4ab-b0b6972f524d")
+	)
+	(fp_rect
+		(start -2.21 -3)
+		(end 17.44 4.05)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "16c540bf-201a-5b41-995b-5ad53f4e0a76")
+	)
+	(fp_rect
+		(start -2.21 -3)
+		(end 17.44 4.05)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "23cc1f0b-35e1-59f8-90b4-ea37876bf951")
+	)
+	(fp_rect
+		(start -2.7 -3.5)
+		(end 17.95 4.55)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "17668ec9-752f-56ee-bbb5-094e0e994ae9")
+	)
+	(embedded_fonts no)
+)

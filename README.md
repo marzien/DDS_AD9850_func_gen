@@ -91,6 +91,10 @@ In `Core/Inc/Rotary_Sw.h`:
 - Pin configuration lives in `DDS_AD9850_FULL.ioc` (toolchain: STM32CubeIDE). Application code is
   inside `USER CODE` blocks and in separate files, so it survives code regeneration.
 
+## Hardware
+A KiCad carrier PCB (Blue Pill + AD9850 module sockets, level shifter, LM7171 sine amplifier,
+square buffer, sync output, BNC connectors) is in [`Hardware/`](Hardware/README.md).
+
 ## Source layout
 - `Core/Src/AD9850.c` – DDS serial driver
 - `Core/Src/I2C_LCD.c` – LCD driver

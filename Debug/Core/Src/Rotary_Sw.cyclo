@@ -1,0 +1,7 @@
+../Core/Src/Rotary_Sw.c:20:23:read_ab	3
+../Core/Src/Rotary_Sw.c:27:23:read_btn_pressed	3
+../Core/Src/Rotary_Sw.c:33:23:is_rest_state	1
+../Core/Src/Rotary_Sw.c:42:6:RS_Init	1
+../Core/Src/Rotary_Sw.c:56:6:RS_Poll_1ms	13
+../Core/Src/Rotary_Sw.c:125:9:RS_GetDelta	1
+../Core/Src/Rotary_Sw.c:136:13:RS_GetButton	1

@@ -1,0 +1,9 @@
+../Core/Src/AD9850.c:5:20:pin_high	16	static
+../Core/Src/AD9850.c:6:20:pin_low	16	static
+../Core/Src/AD9850.c:8:20:pulse	16	static
+../Core/Src/AD9850.c:14:13:shift_bits	24	static
+../Core/Src/AD9850.c:30:6:AD_Init	24	static
+../Core/Src/AD9850.c:47:6:AD_Send_Cmd	16	static
+../Core/Src/AD9850.c:54:6:AD_Power_Down	16	static
+../Core/Src/AD9850.c:60:10:AD_Freq_To_Word	32	static
+../Core/Src/AD9850.c:66:6:AD_Set_Freq	24	static

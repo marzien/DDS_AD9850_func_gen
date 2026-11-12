@@ -1,7 +1,0 @@
-../Core/Src/Rotary_Sw.c:20:23:read_ab	16	static
-../Core/Src/Rotary_Sw.c:27:23:read_btn_pressed	16	static
-../Core/Src/Rotary_Sw.c:33:23:is_rest_state	16	static
-../Core/Src/Rotary_Sw.c:42:6:RS_Init	8	static
-../Core/Src/Rotary_Sw.c:56:6:RS_Poll_1ms	16	static
-../Core/Src/Rotary_Sw.c:125:9:RS_GetDelta	24	static,ignoring_inline_asm
-../Core/Src/Rotary_Sw.c:136:13:RS_GetButton	24	static,ignoring_inline_asm

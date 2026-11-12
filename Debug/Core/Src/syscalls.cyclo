@@ -1,6 +1,0 @@
-../Core/Src/syscalls.c:8:5:_write	1
-../Core/Src/syscalls.c:9:5:_read	1
-../Core/Src/syscalls.c:10:5:_close	1
-../Core/Src/syscalls.c:11:5:_lseek	1
-../Core/Src/syscalls.c:12:5:_isatty	1
-../Core/Src/syscalls.c:13:5:_fstat	1

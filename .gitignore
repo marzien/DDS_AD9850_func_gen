@@ -1,0 +1,23 @@
+# STM32CubeIDE build output
+/Debug/
+/Release/
+
+# Object files and binaries
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.map
+*.list
+*.hex
+*.bin
+
+# CubeMX regeneration cache
+.mxproject
+
+# IDE / OS clutter
+*.launch.bak
+.metadata/
+Thumbs.db
+desktop.ini

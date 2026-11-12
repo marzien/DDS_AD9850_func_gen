@@ -21,7 +21,7 @@ a 20x4 HD44780 LCD with PCF8574 I2C backpack and an STM32F103RB.
 | –    | RESET    | AD9850 RESET → GND |
 | PA6  | BTN_A    | Encoder A / CLK |
 | PA4  | BTN_B    | Encoder B / DT |
-| PA5  | BTN_PUSH | Encoder SW (to 3V3 when pressed, pin has pull-down) |
+| PA5  | BTN_PUSH | Encoder SW (to GND when pressed; internal pull-up + optional 10k to 3V3) |
 | PB10 | I2C2 SCL | LCD backpack SCL |
 | PB11 | I2C2 SDA | LCD backpack SDA |
 
@@ -37,6 +37,8 @@ Phase: 0.00°
 Output: ON
 ```
 - Rotate: change frequency by the digit under the cursor
+- Press and turn: change the step – clockwise = bigger, counter-clockwise = smaller
+  (1 Hz … 10 MHz, shown on the "Step:" line and by the cursor)
 - Short press: move cursor one digit left (1 Hz … 10 MHz, wraps)
 - Long press: open menu
 - While sweeping the screen shows live frequency, start, stop and period;
@@ -52,6 +54,7 @@ MENU      hold=exit
 Items: Output, Phase, Sweep, Sw start, Sw stop, Sw time, Exit
 - Rotate: select item / change value while editing (marker changes to `*`)
 - Short press: edit / confirm (on frequency items it moves the digit cursor)
+- Press and turn while editing Sw start / Sw stop: change the step
 - Long press: confirm edit, or leave the menu
 
 LCD size is set by `LCD_COLS` / `LCD_ROWS` in `Core/Inc/I2C_LCD.h` (layout is designed for 20x4).
@@ -60,7 +63,7 @@ LCD size is set by `LCD_COLS` / `LCD_ROWS` in `Core/Inc/I2C_LCD.h` (layout is de
 In `Core/Inc/Rotary_Sw.h`:
 - `RS_STEPS_PER_DETENT` – 4 for KY-040 style encoders, 2 if one click counts double
 - `RS_REVERSE` – flip rotation direction
-- `RS_BTN_ACTIVE_LEVEL` – 0 if the switch pulls the pin to GND
+- `RS_BTN_ACTIVE_LEVEL` – 0 (default) for a switch to GND, 1 for a switch to 3V3
 
 ## Building (STM32CubeIDE)
 - File > Import > General > Existing Projects into Workspace, select this folder

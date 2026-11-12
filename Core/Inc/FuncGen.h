@@ -5,6 +5,7 @@
  *
  * Main screen
  *   rotate       : change frequency by the digit under the cursor
+ *   press + turn : change step (CW = bigger, CCW = smaller, 1 Hz .. 10 MHz)
  *   short press  : move the cursor one digit left (1 Hz .. 10 MHz, wraps)
  *   long press   : open the menu
  *   (while sweeping, short press stops the sweep)
@@ -12,6 +13,7 @@
  * Menu  (Output, Phase, Sweep, Sw start, Sw stop, Sw time, Exit)
  *   rotate       : choose item            | while editing: change value
  *   short press  : edit item / confirm    | freq items: next digit
+ *   press + turn :                        | freq items: change step
  *   long press   : leave menu             | while editing: confirm
  */
 #include "stm32f1xx_hal.h"

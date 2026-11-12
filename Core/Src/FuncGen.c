@@ -130,6 +130,21 @@ static int8_t digit_col(uint8_t field_col, uint8_t digit)
 static const char *const k_step_names[FG_MAX_DIGIT + 1U] = {
 	"1 Hz", "10 Hz", "100 Hz", "1 kHz", "10 kHz", "100 kHz", "1 MHz", "10 MHz"};
 
+/* Move a step digit by 'd' (press-and-turn), clamped to 1 Hz .. 10 MHz */
+static uint8_t shift_digit(uint8_t digit, int16_t d)
+{
+	int32_t v = (int32_t)digit + d;
+	if (v < 0)
+	{
+		v = 0;
+	}
+	if (v > (int32_t)FG_MAX_DIGIT)
+	{
+		v = FG_MAX_DIGIT;
+	}
+	return (uint8_t)v;
+}
+
 static uint8_t is_freq_item(uint8_t idx)
 {
 	return (idx == MI_SW_START) || (idx == MI_SW_STOP);
@@ -199,7 +214,7 @@ static void exit_menu(void)
 	fg_apply_output();
 }
 
-static void handle_main(int16_t d, RS_BtnEvent b)
+static void handle_main(int16_t d, int16_t hd, RS_BtnEvent b)
 {
 	if (b == RS_BTN_LONG)
 	{
@@ -221,6 +236,11 @@ static void handle_main(int16_t d, RS_BtnEvent b)
 	if (b == RS_BTN_SHORT)
 	{
 		s_set.digit = (uint8_t)((s_set.digit + 1U) % (FG_MAX_DIGIT + 1U));
+		s_dirty = 1;
+	}
+	if (hd != 0)
+	{
+		s_set.digit = shift_digit(s_set.digit, hd);
 		s_dirty = 1;
 	}
 	if (d != 0)
@@ -281,7 +301,7 @@ static void edit_value(int16_t d)
 	fg_apply_output();
 }
 
-static void handle_menu(int16_t d, RS_BtnEvent b)
+static void handle_menu(int16_t d, int16_t hd, RS_BtnEvent b)
 {
 	if (!s_editing)
 	{
@@ -315,6 +335,11 @@ static void handle_menu(int16_t d, RS_BtnEvent b)
 	}
 
 	/* editing */
+	if (hd != 0 && is_freq_item(s_menu_idx))
+	{
+		s_edit_digit = shift_digit(s_edit_digit, hd);
+		s_dirty = 1;
+	}
 	if (b == RS_BTN_LONG)
 	{
 		s_editing = 0;
@@ -531,6 +556,7 @@ void FG_Init(I2C_HandleTypeDef *hi2c)
 
 	memset(s_lcd_cache, 0, sizeof(s_lcd_cache)); /* force full redraw */
 	(void)RS_GetDelta();                         /* drop input made during splash */
+	(void)RS_GetHeldDelta();
 	(void)RS_GetButton();
 
 	fg_apply_output();
@@ -540,18 +566,19 @@ void FG_Init(I2C_HandleTypeDef *hi2c)
 void FG_Task(void)
 {
 	int16_t d = RS_GetDelta();
+	int16_t hd = RS_GetHeldDelta();
 	RS_BtnEvent b = RS_GetButton();
 	uint32_t now;
 
-	if (d != 0 || b != RS_BTN_NONE)
+	if (d != 0 || hd != 0 || b != RS_BTN_NONE)
 	{
 		if (s_screen == SCR_MAIN)
 		{
-			handle_main(d, b);
+			handle_main(d, hd, b);
 		}
 		else
 		{
-			handle_menu(d, b);
+			handle_menu(d, hd, b);
 		}
 	}
 

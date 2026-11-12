@@ -6,6 +6,7 @@ static const int8_t k_qdec[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -
 
 static volatile uint8_t s_ready = 0;
 static volatile int16_t s_delta = 0;
+static volatile int16_t s_held_delta = 0; /* clicks turned while the button is held */
 static volatile uint8_t s_event = RS_BTN_NONE;
 
 static uint8_t s_ab;
@@ -16,6 +17,7 @@ static uint8_t  s_btn_stable;
 static uint8_t  s_btn_cnt;
 static uint16_t s_btn_hold;
 static uint8_t  s_btn_long_sent;
+static uint8_t  s_btn_rotated;   /* knob turned during this press */
 
 static inline uint8_t read_ab(void)
 {
@@ -45,6 +47,8 @@ void RS_Init(void)
 	s_rest_ab = s_ab; /* encoder sits in a detent at power-up */
 	s_acc = 0;
 	s_delta = 0;
+	s_held_delta = 0;
+	s_btn_rotated = 0;
 	s_btn_stable = read_btn_pressed();
 	s_btn_cnt = 0;
 	s_btn_hold = 0;
@@ -68,8 +72,9 @@ void RS_Poll_1ms(void)
 	{
 		s_acc += k_qdec[(s_ab << 2) | ab];
 		s_ab = ab;
+		int8_t click = 0;
 #if RS_STEPS_PER_DETENT <= 1
-		s_delta += s_acc;
+		click = s_acc;
 		s_acc = 0;
 #else
 		/* Count one click when we land back in a detent; contact bounce cancels itself. */
@@ -77,15 +82,32 @@ void RS_Poll_1ms(void)
 		{
 			if (s_acc >= (RS_STEPS_PER_DETENT / 2))
 			{
-				s_delta += RS_REVERSE ? -1 : 1;
+				click = 1;
 			}
 			else if (s_acc <= -(RS_STEPS_PER_DETENT / 2))
 			{
-				s_delta += RS_REVERSE ? 1 : -1;
+				click = -1;
 			}
 			s_acc = 0;
 		}
 #endif
+		if (RS_REVERSE)
+		{
+			click = (int8_t)-click;
+		}
+		if (click != 0)
+		{
+			if (s_btn_stable)
+			{
+				/* press-and-turn: separate channel, and the press is no longer a click */
+				s_held_delta += click;
+				s_btn_rotated = 1;
+			}
+			else
+			{
+				s_delta += click;
+			}
+		}
 	}
 
 	/* ---- Push switch ---- */
@@ -100,8 +122,9 @@ void RS_Poll_1ms(void)
 			{
 				s_btn_hold = 0;
 				s_btn_long_sent = 0;
+				s_btn_rotated = 0;
 			}
-			else if (!s_btn_long_sent)
+			else if (!s_btn_long_sent && !s_btn_rotated)
 			{
 				s_event = RS_BTN_SHORT;
 			}
@@ -112,7 +135,7 @@ void RS_Poll_1ms(void)
 		s_btn_cnt = 0;
 	}
 
-	if (s_btn_stable && !s_btn_long_sent)
+	if (s_btn_stable && !s_btn_long_sent && !s_btn_rotated)
 	{
 		if (++s_btn_hold >= RS_LONG_PRESS_MS)
 		{
@@ -129,6 +152,17 @@ int16_t RS_GetDelta(void)
 	__disable_irq();
 	d = s_delta;
 	s_delta = 0;
+	__set_PRIMASK(primask);
+	return d;
+}
+
+int16_t RS_GetHeldDelta(void)
+{
+	int16_t d;
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+	d = s_held_delta;
+	s_held_delta = 0;
 	__set_PRIMASK(primask);
 	return d;
 }

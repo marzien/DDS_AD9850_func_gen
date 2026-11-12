@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Rotary_Sw.h"
+#include "FuncGen.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -189,6 +190,7 @@ void SysTick_Handler(void)
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
   RS_Poll_1ms();
+  FG_Tick_1ms();
 
   /* USER CODE END SysTick_IRQn 1 */
 }

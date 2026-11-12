@@ -8,6 +8,7 @@ a 20x4 HD44780 LCD with PCF8574 I2C backpack and an STM32F103RB.
 - Phase offset in 11.25° steps
 - Output on/off (AD9850 power-down)
 - Linear frequency sweep (up or down), period 0.1 s – 60 s
+- Burst / gated output: on for X ms, off for Y ms (1 ms – 60 s each), also during a sweep
 - Settings are saved to flash and restored at power-up
 - Outputs of the AD9850 module: **sine** on ZOUT1/ZOUT2, **square** on QOUT1/QOUT2
   (square duty cycle is set by the blue trimmer on the module). The AD9850 cannot
@@ -52,11 +53,18 @@ MENU      hold=exit
  Phase         0.00°
  Sweep           OFF
 ```
-Items: Output, Phase, Sweep, Sw start, Sw stop, Sw time, Exit
+Items: Output, Phase, Burst, On time, Off time, Sweep, Sw start, Sw stop, Sw time, Exit
 - Rotate: select item / change value while editing (marker changes to `*`)
 - Short press: edit / confirm (on frequency items it moves the digit cursor)
 - Press and turn while editing Sw start / Sw stop: change the step
 - Long press: confirm edit, or leave the menu
+
+**Burst:** set Burst ON, then On time / Off time. The output is switched with the
+AD9850 power-down bit, timed from SysTick (1 ms resolution). Each cycle starts with
+the on time. Times change in 1 ms steps below 100 ms, 10 ms below 1 s, 100 ms below
+10 s and 1 s above. The main screen shows `Burst on/off ms` on the last line (`Out:BST`
+while sweeping). Gating is not synchronised to the waveform, so a burst does not start
+or end at a zero crossing.
 
 ## Saved settings
 All settings (frequency, step, phase, output, sweep start/stop/time, sweep on/off)

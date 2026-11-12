@@ -14,7 +14,9 @@
 #define FG_SWT_MIN         1U    /* sweep time, units of 0.1 s */
 #define FG_SWT_MAX         600U
 #define FG_SAVE_DELAY_MS   3000U /* save settings this long after the last input */
-#define FG_SET_VERSION     1U    /* bump when FG_Settings changes */
+#define FG_SET_VERSION     2U    /* bump when FG_Settings changes */
+#define FG_BURST_MIN_MS    1U    /* burst on/off time limits */
+#define FG_BURST_MAX_MS    60000U
 
 typedef enum { SCR_MAIN = 0, SCR_MENU } FG_Screen;
 
@@ -22,6 +24,9 @@ typedef enum
 {
 	MI_OUTPUT = 0,
 	MI_PHASE,
+	MI_BURST,
+	MI_BU_ON,
+	MI_BU_OFF,
 	MI_SWEEP,
 	MI_SW_START,
 	MI_SW_STOP,
@@ -31,7 +36,7 @@ typedef enum
 } FG_MenuItem;
 
 static const char *const k_menu_names[MI_COUNT] = {
-	"Output", "Phase", "Sweep", "Sw start", "Sw stop", "Sw time", "Exit"};
+	"Output", "Phase", "Burst", "On time", "Off time", "Sweep", "Sw start", "Sw stop", "Sw time", "Exit"};
 
 typedef struct
 {
@@ -39,21 +44,29 @@ typedef struct
 	uint32_t sw_start;   /* Hz */
 	uint32_t sw_stop;    /* Hz */
 	uint16_t sw_time_ds; /* sweep period, 0.1 s units */
+	uint16_t bu_on_ms;   /* burst: output on time */
+	uint16_t bu_off_ms;  /* burst: output off time */
 	uint8_t  phase;      /* 0..31, 11.25 deg steps */
 	uint8_t  digit;      /* main screen edit digit, step = 10^digit */
 	uint8_t  out_on;
 	uint8_t  sweep_on;
+	uint8_t  burst_on;
 } FG_Settings;
+
+typedef char fg_settings_size_check[(sizeof(FG_Settings) <= FS_MAX_PAYLOAD) ? 1 : -1];
 
 static const FG_Settings k_defaults = {
 	1000U,   /* freq */
 	100U,    /* sw_start */
 	10000U,  /* sw_stop */
 	20U,     /* sw_time 2.0 s */
+	10U,     /* bu_on_ms */
+	90U,     /* bu_off_ms */
 	0U,      /* phase */
 	3U,      /* digit: 1 kHz */
 	1U,      /* out_on */
-	0U       /* sweep_on */
+	0U,      /* sweep_on */
+	0U       /* burst_on */
 };
 
 static FG_Settings s_set;
@@ -72,6 +85,16 @@ static uint32_t  s_cur_freq = 0;      /* frequency currently on the output */
 static uint32_t  s_sweep_t0 = 0;
 static uint32_t  s_sweep_last = 0;
 static uint32_t  s_lcd_last = 0;
+
+/* Burst gate, run from SysTick (FG_Tick_1ms). The main loop changes these
+ * only with interrupts masked. */
+static volatile uint8_t  s_gate_enable = 0;
+static volatile uint8_t  s_gate_open = 1;
+static volatile uint16_t s_gate_on_ms = 0;
+static volatile uint32_t s_gate_period = 0;
+static volatile uint32_t s_gate_t = 0;
+static volatile uint32_t s_dds_freq = 0;   /* last frequency/phase for the DDS */
+static volatile uint8_t  s_dds_phase = 0;
 
 static char      s_lcd_cache[LCD_ROWS][LCD_COLS + 1];
 static uint8_t   s_cur_shown = 0;
@@ -167,7 +190,9 @@ static uint8_t settings_valid(const FG_Settings *p)
 	       (p->sw_stop <= FG_MAX_FREQ) &&
 	       (p->sw_time_ds >= FG_SWT_MIN) && (p->sw_time_ds <= FG_SWT_MAX) &&
 	       (p->phase < AD_PHASE_STEPS) && (p->digit <= FG_MAX_DIGIT) &&
-	       (p->out_on <= 1U) && (p->sweep_on <= 1U);
+	       (p->bu_on_ms >= FG_BURST_MIN_MS) && (p->bu_on_ms <= FG_BURST_MAX_MS) &&
+	       (p->bu_off_ms >= FG_BURST_MIN_MS) && (p->bu_off_ms <= FG_BURST_MAX_MS) &&
+	       (p->out_on <= 1U) && (p->sweep_on <= 1U) && (p->burst_on <= 1U);
 }
 
 /* Load settings from flash; defaults if none stored, invalid, or 'force_defaults' */
@@ -208,11 +233,48 @@ static void settings_autosave(uint32_t now)
 
 /* ------------------------------------------------------------------------ */
 
+static uint32_t irq_save(void)
+{
+	uint32_t m = __get_PRIMASK();
+	__disable_irq();
+	return m;
+}
+
+static void irq_restore(uint32_t m)
+{
+	__set_PRIMASK(m);
+}
+
+/* Send a frequency to the DDS. While the burst gate is closed the value is
+ * only remembered; the gate sends it when it opens. */
+static void dds_write(uint32_t freq)
+{
+	uint32_t m = irq_save();
+	s_dds_freq = freq;
+	s_dds_phase = s_set.phase;
+	if (!s_gate_enable || s_gate_open)
+	{
+		AD_Set_Freq(freq, s_set.phase);
+	}
+	irq_restore(m);
+}
+
 static void fg_apply_output(void)
 {
+	uint32_t m = irq_save();
+	s_gate_enable = (uint8_t)(s_set.out_on && s_set.burst_on);
+	s_gate_on_ms = s_set.bu_on_ms;
+	s_gate_period = (uint32_t)s_set.bu_on_ms + s_set.bu_off_ms;
+	s_gate_t = 0;
+	s_gate_open = 1; /* each burst cycle starts with the on time */
 	if (!s_set.out_on)
 	{
 		AD_Power_Down();
+	}
+	irq_restore(m);
+
+	if (!s_set.out_on)
+	{
 		return;
 	}
 	if (s_set.sweep_on)
@@ -225,7 +287,37 @@ static void fg_apply_output(void)
 	{
 		s_cur_freq = s_set.freq;
 	}
-	AD_Set_Freq(s_cur_freq, s_set.phase);
+	dds_write(s_cur_freq);
+}
+
+/* Burst times: 1 ms steps below 100 ms, 10 ms below 1 s, 100 ms below 10 s, then 1 s */
+static uint32_t burst_step(uint32_t v)
+{
+	return (v < 100U) ? 1U : (v < 1000U) ? 10U : (v < 10000U) ? 100U : 1000U;
+}
+
+static uint16_t adjust_burst(uint16_t v, int16_t d)
+{
+	int32_t x = v;
+	while (d > 0)
+	{
+		x += (int32_t)burst_step((uint32_t)x);
+		d--;
+	}
+	while (d < 0)
+	{
+		x -= (int32_t)burst_step((x > 1) ? (uint32_t)(x - 1) : 0U);
+		d++;
+	}
+	if (x < (int32_t)FG_BURST_MIN_MS)
+	{
+		x = FG_BURST_MIN_MS;
+	}
+	if (x > (int32_t)FG_BURST_MAX_MS)
+	{
+		x = FG_BURST_MAX_MS;
+	}
+	return (uint16_t)x;
 }
 
 static void fg_sweep_task(void)
@@ -248,7 +340,7 @@ static void fg_sweep_task(void)
 	t = (now - s_sweep_t0) % period;
 	span = (int64_t)s_set.sw_stop - (int64_t)s_set.sw_start; /* negative = sweep down */
 	s_cur_freq = (uint32_t)((int64_t)s_set.sw_start + (span * (int64_t)t) / (int64_t)period);
-	AD_Set_Freq(s_cur_freq, s_set.phase);
+	dds_write(s_cur_freq);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -326,6 +418,18 @@ static void edit_value(int16_t d)
 			v += AD_PHASE_STEPS;
 		}
 		s_set.phase = (uint8_t)v;
+		break;
+	case MI_BURST:
+		if (d & 1)
+		{
+			s_set.burst_on = (uint8_t)!s_set.burst_on;
+		}
+		break;
+	case MI_BU_ON:
+		s_set.bu_on_ms = adjust_burst(s_set.bu_on_ms, d);
+		break;
+	case MI_BU_OFF:
+		s_set.bu_off_ms = adjust_burst(s_set.bu_off_ms, d);
 		break;
 	case MI_SWEEP:
 		if (d & 1)
@@ -485,6 +589,15 @@ static void menu_value(uint8_t idx, char *out, size_t n)
 		ph = (unsigned)s_set.phase * 1125U; /* hundredths of a degree */
 		snprintf(out, n, "   %3u.%02u\xDF", ph / 100U, ph % 100U);
 		break;
+	case MI_BURST:
+		snprintf(out, n, "%10s", s_set.burst_on ? "ON" : "OFF");
+		break;
+	case MI_BU_ON:
+		snprintf(out, n, "%7u ms", (unsigned)s_set.bu_on_ms);
+		break;
+	case MI_BU_OFF:
+		snprintf(out, n, "%7u ms", (unsigned)s_set.bu_off_ms);
+		break;
 	case MI_SWEEP:
 		snprintf(out, n, "%10s", s_set.sweep_on ? "ON" : "OFF");
 		break;
@@ -525,14 +638,22 @@ static void render(void)
 			snprintf(l[2], sizeof(l[2]), "Stop: %s Hz", f);
 			snprintf(l[3], sizeof(l[3]), "Sweep %2u.%us  Out:%s",
 			         (unsigned)(s_set.sw_time_ds / 10U), (unsigned)(s_set.sw_time_ds % 10U),
-			         s_set.out_on ? "ON" : "OFF");
+			         s_set.out_on ? (s_set.burst_on ? "BST" : "ON") : "OFF");
 		}
 		else
 		{
 			unsigned ph = (unsigned)s_set.phase * 1125U;
 			snprintf(l[1], sizeof(l[1]), "Step: %s", k_step_names[s_set.digit]);
 			snprintf(l[2], sizeof(l[2]), "Phase: %u.%02u\xDF", ph / 100U, ph % 100U);
-			snprintf(l[3], sizeof(l[3]), "Output: %s", s_set.out_on ? "ON" : "OFF");
+			if (s_set.out_on && s_set.burst_on)
+			{
+				snprintf(l[3], sizeof(l[3]), "Burst %u/%u ms",
+				         (unsigned)s_set.bu_on_ms, (unsigned)s_set.bu_off_ms);
+			}
+			else
+			{
+				snprintf(l[3], sizeof(l[3]), "Output: %s", s_set.out_on ? "ON" : "OFF");
+			}
 			cur_row = 0;
 			cur_col = digit_col(MAIN_FCOL, s_set.digit);
 		}
@@ -663,5 +784,33 @@ void FG_Task(void)
 		s_dirty = 0;
 		s_lcd_last = now;
 		render();
+	}
+}
+
+/* Burst gate: call every 1 ms from SysTick_Handler */
+void FG_Tick_1ms(void)
+{
+	uint8_t open;
+
+	if (!s_gate_enable)
+	{
+		return;
+	}
+	if (++s_gate_t >= s_gate_period)
+	{
+		s_gate_t = 0;
+	}
+	open = (uint8_t)(s_gate_t < s_gate_on_ms);
+	if (open != s_gate_open)
+	{
+		s_gate_open = open;
+		if (open)
+		{
+			AD_Set_Freq(s_dds_freq, s_dds_phase);
+		}
+		else
+		{
+			AD_Power_Down();
+		}
 	}
 }

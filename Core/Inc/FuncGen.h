@@ -10,7 +10,8 @@
  *   long press   : open the menu
  *   (while sweeping, short press stops the sweep)
  *
- * Menu  (Output, Phase, Sweep, Sw start, Sw stop, Sw time, Exit)
+ * Menu  (Output, Phase, Burst, On time, Off time, Sweep, Sw start, Sw stop,
+ *        Sw time, Exit)
  *   rotate       : choose item            | while editing: change value
  *   short press  : edit item / confirm    | freq items: next digit
  *   press + turn :                        | freq items: change step
@@ -19,6 +20,7 @@
 #include "stm32f1xx_hal.h"
 
 void FG_Init(I2C_HandleTypeDef *hi2c);
-void FG_Task(void); /* call continuously from the main loop */
+void FG_Task(void);     /* call continuously from the main loop */
+void FG_Tick_1ms(void); /* call every 1 ms from SysTick_Handler (burst gate) */
 
 #endif

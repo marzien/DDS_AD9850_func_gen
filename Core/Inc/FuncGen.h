@@ -1,7 +1,7 @@
 #ifndef _FUNCGEN_H_
 #define _FUNCGEN_H_
 /*
- * AD9850 function generator application: rotary encoder UI on a 20x4 I2C LCD.
+ * AD9850 function generator: rotary encoder UI on a 20x4 I2C LCD (FreeRTOS UI task).
  *
  * Main screen
  *   rotate       : change frequency by the digit under the cursor
@@ -42,11 +42,10 @@ typedef struct
 	uint8_t  burst_on;
 } FG_Settings;
 
-void FG_Init(I2C_HandleTypeDef *hi2c);
-void FG_Task(void);     /* call continuously from the main loop */
-void FG_Tick_1ms(void); /* call every 1 ms from SysTick_Handler (burst gate) */
+void FG_LoadSettings(void);   /* before the scheduler: load settings, start the output */
+void FG_UiTask(void *arg);    /* UI task: menus, LCD, settings autosave */
 
-/* For remote control (main-loop context only): change fields of FG_GetSettings(),
+/* For remote control: with App_Lock() held, change fields of FG_GetSettings(),
  * then call FG_SettingsChanged() to apply them, refresh the LCD and autosave. */
 FG_Settings *FG_GetSettings(void);
 void FG_SettingsChanged(void);

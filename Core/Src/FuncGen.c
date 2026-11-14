@@ -6,11 +6,14 @@
 #include "I2C_LCD.h"
 #include "Rotary_Sw.h"
 #include "Flash_Store.h"
-#include "UsbCmd.h"
+#include "Dds.h"
+#include "App.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-#define FG_SWEEP_UPDATE_MS 5U    /* DDS update rate while sweeping */
 #define FG_SWEEP_LCD_MS    500U  /* LCD refresh rate while sweeping */
 #define FG_SAVE_DELAY_MS   3000U /* save settings this long after the last input */
+#define FG_UI_PERIOD_MS    100U  /* UI task wake-up when there is no input */
 #define FG_SET_VERSION     2U    /* bump when FG_Settings changes */
 
 typedef enum { SCR_MAIN = 0, SCR_MENU } FG_Screen;
@@ -61,20 +64,8 @@ static uint8_t   s_editing = 0;
 static uint8_t   s_edit_digit = 3;
 static uint8_t   s_dirty = 1;
 
-static uint32_t  s_cur_freq = 0;      /* frequency currently on the output */
-static uint32_t  s_sweep_t0 = 0;
-static uint32_t  s_sweep_last = 0;
 static uint32_t  s_lcd_last = 0;
-
-/* Burst gate, run from SysTick (FG_Tick_1ms). The main loop changes these
- * only with interrupts masked. */
-static volatile uint8_t  s_gate_enable = 0;
-static volatile uint8_t  s_gate_open = 1;
-static volatile uint16_t s_gate_on_ms = 0;
-static volatile uint32_t s_gate_period = 0;
-static volatile uint32_t s_gate_t = 0;
-static volatile uint32_t s_dds_freq = 0;   /* last frequency/phase for the DDS */
-static volatile uint8_t  s_dds_phase = 0;
+static uint8_t   s_reset_done = 0;    /* defaults restored at power-up */
 
 static char      s_lcd_cache[LCD_ROWS][LCD_COLS + 1];
 static uint8_t   s_cur_shown = 0;
@@ -213,61 +204,10 @@ static void settings_autosave(uint32_t now)
 
 /* ------------------------------------------------------------------------ */
 
-static uint32_t irq_save(void)
-{
-	uint32_t m = __get_PRIMASK();
-	__disable_irq();
-	return m;
-}
-
-static void irq_restore(uint32_t m)
-{
-	__set_PRIMASK(m);
-}
-
-/* Send a frequency to the DDS. While the burst gate is closed the value is
- * only remembered; the gate sends it when it opens. */
-static void dds_write(uint32_t freq)
-{
-	uint32_t m = irq_save();
-	s_dds_freq = freq;
-	s_dds_phase = s_set.phase;
-	if (!s_gate_enable || s_gate_open)
-	{
-		AD_Set_Freq(freq, s_set.phase);
-	}
-	irq_restore(m);
-}
-
+/* Hand the settings to the DDS task (restarts sweep / burst) */
 static void fg_apply_output(void)
 {
-	uint32_t m = irq_save();
-	s_gate_enable = (uint8_t)(s_set.out_on && s_set.burst_on);
-	s_gate_on_ms = s_set.bu_on_ms;
-	s_gate_period = (uint32_t)s_set.bu_on_ms + s_set.bu_off_ms;
-	s_gate_t = 0;
-	s_gate_open = 1; /* each burst cycle starts with the on time */
-	if (!s_set.out_on)
-	{
-		AD_Power_Down();
-	}
-	irq_restore(m);
-
-	if (!s_set.out_on)
-	{
-		return;
-	}
-	if (s_set.sweep_on)
-	{
-		s_sweep_t0 = HAL_GetTick();
-		s_sweep_last = s_sweep_t0;
-		s_cur_freq = s_set.sw_start;
-	}
-	else
-	{
-		s_cur_freq = s_set.freq;
-	}
-	dds_write(s_cur_freq);
+	DDS_Configure(&s_set);
 }
 
 /* Burst times: 1 ms steps below 100 ms, 10 ms below 1 s, 100 ms below 10 s, then 1 s */
@@ -298,29 +238,6 @@ static uint16_t adjust_burst(uint16_t v, int16_t d)
 		x = FG_BURST_MAX_MS;
 	}
 	return (uint16_t)x;
-}
-
-static void fg_sweep_task(void)
-{
-	uint32_t now, period, t;
-	int64_t span;
-
-	if (!s_set.sweep_on || !s_set.out_on)
-	{
-		return;
-	}
-	now = HAL_GetTick();
-	if ((now - s_sweep_last) < FG_SWEEP_UPDATE_MS)
-	{
-		return;
-	}
-	s_sweep_last = now;
-
-	period = (uint32_t)s_set.sw_time_ds * 100U;
-	t = (now - s_sweep_t0) % period;
-	span = (int64_t)s_set.sw_stop - (int64_t)s_set.sw_start; /* negative = sweep down */
-	s_cur_freq = (uint32_t)((int64_t)s_set.sw_start + (span * (int64_t)t) / (int64_t)period);
-	dds_write(s_cur_freq);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -607,7 +524,7 @@ static void render(void)
 
 	if (s_screen == SCR_MAIN)
 	{
-		fmt_freq(f, s_set.sweep_on ? s_cur_freq : s_set.freq);
+		fmt_freq(f, s_set.sweep_on ? DDS_CurrentFreq() : s_set.freq);
 		snprintf(l[0], sizeof(l[0]), "Freq: %s Hz", f);
 
 		if (s_set.sweep_on)
@@ -691,43 +608,18 @@ static void render(void)
 
 /* ------------------------------------------------------------------------ */
 
-void FG_Init(I2C_HandleTypeDef *hi2c)
+/* Before the scheduler starts: load the settings and start the output */
+void FG_LoadSettings(void)
 {
-	AD_CFG ad_cfg;
-	uint8_t reset;
-
-	ad_cfg.W_CLK_PORT = W_CLK_GPIO_Port;
-	ad_cfg.W_CLK_PIN  = W_CLK_Pin;
-	ad_cfg.FU_FD_PORT = FU_UD_GPIO_Port;
-	ad_cfg.FU_FD_PIN  = FU_UD_Pin;
-	ad_cfg.DATA_PORT  = Data_GPIO_Port;
-	ad_cfg.DATA_PIN   = Data_Pin;
-
-	AD_Init(&ad_cfg);
-	RS_Init();
-
 	/* Holding the encoder button at power-up restores the default settings */
-	reset = (HAL_GPIO_ReadPin(BTN_PUSH_GPIO_Port, BTN_PUSH_Pin) ==
-	         (RS_BTN_ACTIVE_LEVEL ? GPIO_PIN_SET : GPIO_PIN_RESET));
-	settings_load(reset);
-
-	lcd_init(hi2c, SLAVE_ADDRESS_LCD);
-	lcd_print_line(0, "  DDS Function Gen");
-	lcd_print_line(1, "   AD9850 + STM32");
-	lcd_print_line(2, "  0 Hz ... 40 MHz");
-	lcd_print_line(3, reset ? " Defaults restored" : "  Sine / Square");
-	HAL_Delay(reset ? 2000 : 1200);
-
-	memset(s_lcd_cache, 0, sizeof(s_lcd_cache)); /* force full redraw */
-	(void)RS_GetDelta();                         /* drop input made during splash */
-	(void)RS_GetHeldDelta();
-	(void)RS_GetButton();
-
+	s_reset_done = (uint8_t)(HAL_GPIO_ReadPin(BTN_PUSH_GPIO_Port, BTN_PUSH_Pin) ==
+	                         (RS_BTN_ACTIVE_LEVEL ? GPIO_PIN_SET : GPIO_PIN_RESET));
+	settings_load(s_reset_done);
 	fg_apply_output();
-	s_dirty = 1;
 }
 
-/* ---------------------------------------------- API for remote commands */
+/* ---------------------------------------------- API for remote commands
+ * Call with App_Lock() held. */
 
 FG_Settings *FG_GetSettings(void)
 {
@@ -740,6 +632,7 @@ void FG_SettingsChanged(void)
 	s_dirty = 1;
 	s_save_pending = 1;
 	s_last_input = HAL_GetTick();
+	App_NotifyUi(APP_EV_REMOTE);
 }
 
 uint8_t FG_SaveNow(void)
@@ -759,75 +652,71 @@ uint8_t FG_SaveNow(void)
 
 uint32_t FG_OutputFreq(void)
 {
-	return (s_set.sweep_on && s_set.out_on) ? s_cur_freq : s_set.freq;
+	return (s_set.sweep_on && s_set.out_on) ? DDS_CurrentFreq() : s_set.freq;
 }
 
-void FG_Task(void)
+/* ------------------------------------------------------------------ UI task */
+
+extern I2C_HandleTypeDef hi2c2;
+
+void FG_UiTask(void *arg)
 {
-	int16_t d = RS_GetDelta();
-	int16_t hd = RS_GetHeldDelta();
-	RS_BtnEvent b = RS_GetButton();
-	uint32_t now;
+	(void)arg;
 
-	UC_Poll(); /* USB virtual COM port commands */
+	lcd_init(&hi2c2, SLAVE_ADDRESS_LCD);
+	lcd_print_line(0, "  DDS Function Gen");
+	lcd_print_line(1, "   AD9850 + STM32");
+	lcd_print_line(2, "  0 Hz ... 40 MHz");
+	lcd_print_line(3, s_reset_done ? " Defaults restored" : "  Sine / Square");
+	vTaskDelay(pdMS_TO_TICKS(s_reset_done ? 2000U : 1200U));
 
-	if (d != 0 || hd != 0 || b != RS_BTN_NONE)
+	memset(s_lcd_cache, 0, sizeof(s_lcd_cache)); /* force full redraw */
+	(void)RS_GetDelta();                         /* drop input made during splash */
+	(void)RS_GetHeldDelta();
+	(void)RS_GetButton();
+	s_dirty = 1;
+
+	for (;;)
 	{
-		s_save_pending = 1;
-		s_last_input = HAL_GetTick();
-		if (s_screen == SCR_MAIN)
+		int16_t d, hd;
+		RS_BtnEvent b;
+		uint32_t now;
+
+		App_Lock();
+		d = RS_GetDelta();
+		hd = RS_GetHeldDelta();
+		b = RS_GetButton();
+		if (d != 0 || hd != 0 || b != RS_BTN_NONE)
 		{
-			handle_main(d, hd, b);
+			s_save_pending = 1;
+			s_last_input = HAL_GetTick();
+			if (s_screen == SCR_MAIN)
+			{
+				handle_main(d, hd, b);
+			}
+			else
+			{
+				handle_menu(d, hd, b);
+			}
 		}
-		else
+
+		now = HAL_GetTick();
+		settings_autosave(now);
+
+		if (s_set.sweep_on && s_set.out_on && s_screen == SCR_MAIN &&
+		    (now - s_lcd_last) >= FG_SWEEP_LCD_MS)
 		{
-			handle_menu(d, hd, b);
+			s_dirty = 1;
 		}
-	}
-
-	fg_sweep_task();
-
-	now = HAL_GetTick();
-	settings_autosave(now);
-
-	if (s_set.sweep_on && s_set.out_on && s_screen == SCR_MAIN &&
-	    (now - s_lcd_last) >= FG_SWEEP_LCD_MS)
-	{
-		s_dirty = 1;
-	}
-
-	if (s_dirty)
-	{
-		s_dirty = 0;
-		s_lcd_last = now;
-		render();
-	}
-}
-
-/* Burst gate: call every 1 ms from SysTick_Handler */
-void FG_Tick_1ms(void)
-{
-	uint8_t open;
-
-	if (!s_gate_enable)
-	{
-		return;
-	}
-	if (++s_gate_t >= s_gate_period)
-	{
-		s_gate_t = 0;
-	}
-	open = (uint8_t)(s_gate_t < s_gate_on_ms);
-	if (open != s_gate_open)
-	{
-		s_gate_open = open;
-		if (open)
+		if (s_dirty)
 		{
-			AD_Set_Freq(s_dds_freq, s_dds_phase);
+			s_dirty = 0;
+			s_lcd_last = now;
+			render();
 		}
-		else
-		{
-			AD_Power_Down();
-		}
+		App_Unlock();
+
+		/* Sleep until the encoder / a USB command wakes us, or the periodic check */
+		(void)xTaskNotifyWait(0U, 0xFFFFFFFFUL, NULL, pdMS_TO_TICKS(FG_UI_PERIOD_MS));
 	}
 }

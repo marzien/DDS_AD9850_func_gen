@@ -15,11 +15,12 @@
  *   BURST ON|OFF
  *   SAVE                  write settings to flash now
  *   ? | STATUS            print all settings
+ *   MEM                   flash / RAM use and minimum free stack of every task
  *   *IDN?                 identification
  *   HELP
  */
 #include <stdint.h>
 
-void UC_Poll(void);   /* call from the main loop */
+void UC_Task(void *arg);   /* USB command task, woken by received data */
 
 #endif

@@ -94,6 +94,7 @@ static int8_t CDC_Receive_FS(uint8_t *Buf, uint32_t *Len)
   }
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+  CDC_RxCallback();
   return (USBD_OK);
   /* USER CODE END 6 */
 }
@@ -129,6 +130,11 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+/* Runs in the USB interrupt after data was queued; override to wake a task */
+__weak void CDC_RxCallback(void)
+{
+}
+
 int16_t CDC_ReadByte(void)
 {
   uint8_t b;

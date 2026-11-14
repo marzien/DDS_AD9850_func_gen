@@ -5,7 +5,8 @@ a 20x4 HD44780 LCD with PCF8574 I2C backpack and an STM32F103RB.
 
 ## Features
 - 0 Hz – 40 MHz, 1 Hz resolution (125 MHz reference clock)
-- STM32 runs at 72 MHz (8 MHz crystal × 9, APB1 36 MHz, 48 MHz USB clock ready)
+- STM32 runs at 72 MHz (8 MHz crystal × 9, APB1 36 MHz, 48 MHz USB clock)
+- FreeRTOS V11.2.0 with four statically allocated tasks (no heap)
 - Phase offset in 11.25° steps
 - Output on/off (AD9850 power-down)
 - Linear frequency sweep (up or down), period 0.1 s – 60 s
@@ -99,6 +100,7 @@ does not matter. One command per line, case-insensitive; every command answers `
 | `SAVE` | write settings to flash now (otherwise saved 3 s after the last change) |
 | `?` or `STATUS` | print all settings |
 | `*IDN?` | identification string |
+| `MEM` | flash / RAM use and the minimum free stack of every task |
 | `HELP` | list the commands |
 
 Remote changes update the LCD and are autosaved like changes made with the knob.
@@ -108,6 +110,44 @@ Notes:
 - The firmware pulls D+ low for 20 ms at start-up so the PC re-detects the board after a reset.
 - With the carrier PCB, do not connect the PC USB and the 5 V DC jack at the same time
   (the PC would supply the whole board through the Blue Pill 5V pin).
+
+## Firmware structure (FreeRTOS)
+| Task | Priority | Stack | Job |
+|---|---|---|---|
+| DDS | 4 (highest) | 640 B | the only code that writes to the AD9850: applies settings, steps the sweep every 5 ms, runs the burst gate every 1 ms |
+| INPUT | 3 | 512 B | samples the encoder and button every 1 ms, wakes the UI task |
+| UI | 2 | 1536 B | menus, LCD, settings autosave to flash |
+| USB | 1 | 1536 B | command parser, woken by the USB interrupt |
+| IDLE | 0 | 384 B | FreeRTOS idle task |
+
+- The UI and USB tasks share the settings under one mutex and hand them to the DDS task with
+  `DDS_Configure()`. Because the DDS task has the highest priority, sweep and burst timing no
+  longer depend on LCD redraws or USB traffic.
+- FreeRTOS uses SysTick; the HAL time base runs on TIM4. The USB interrupt has priority 5
+  (`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`), TIM4 / SysTick / PendSV priority 15.
+- Everything is statically allocated (`configSUPPORT_DYNAMIC_ALLOCATION 0`), so RAM use is fixed
+  at link time. Stack overflow checking (method 2) is on.
+- The Debug configuration is built with `-Og` (was `-O0`) to keep flash use low.
+
+### Memory budget
+`python tools/mem_check.py` (after a build) prints flash / RAM use and a worst-case stack
+estimate for every task from the call graph:
+
+| | Used | Limit |
+|---|---|---|
+| Flash | 39.3 KB | 63 KB (61 %) |
+| RAM (data + bss + heap + main stack) | 12.2 KB | 20 KB (59 %) |
+
+| Stack | Size | Estimated need |
+|---|---|---|
+| DDS | 640 B | 192 B |
+| INPUT | 512 B | 136 B |
+| UI | 1536 B | 760 B |
+| USB | 1536 B | 704 B |
+| IDLE | 384 B | 64 B |
+| Interrupts (main stack) | 1536 B | 504 B |
+
+These are estimates; the USB command `MEM` reports the real minimum free stack on the board.
 
 ## Tuning
 In `Core/Inc/Rotary_Sw.h`:
@@ -129,9 +169,14 @@ square buffer, sync output, BNC connectors) is in [`Hardware/`](Hardware/README.
 ## Source layout
 - `Core/Src/AD9850.c` – DDS serial driver
 - `Core/Src/I2C_LCD.c` – LCD driver
-- `Core/Src/Rotary_Sw.c` – encoder + button, polled from SysTick (1 ms)
-- `Core/Src/FuncGen.c` – user interface and sweep logic
+- `Core/Src/Rotary_Sw.c` – encoder + button, polled by the INPUT task (1 ms)
+- `Core/Src/App.c` – task creation, settings mutex, memory report, RTOS hooks
+- `Core/Src/Dds.c` – DDS task: output, sweep and burst timing
+- `Core/Src/FuncGen.c` – UI task: menus, LCD, settings
 - `Core/Src/Flash_Store.c` – wear-levelled settings storage in flash
-- `Core/Src/UsbCmd.c` – USB command parser
+- `Core/Src/UsbCmd.c` – USB task: command parser
+- `Core/Inc/FreeRTOSConfig.h` – kernel configuration
+- `Middlewares/Third_Party/FreeRTOS/` – FreeRTOS kernel V11.2.0 (tasks, queue, list, ARM_CM3 port)
+- `tools/mem_check.py` – flash / RAM / stack budget check
 - `USB_DEVICE/` – USB CDC device glue (descriptors, low-level driver, virtual COM port)
 - `Middlewares/ST/STM32_USB_Device_Library/` – ST USB device library v2.11.6 (core + CDC)

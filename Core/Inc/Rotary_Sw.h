@@ -2,7 +2,7 @@
 #define _ROTART_SW_H_
 /*
  * Rotary encoder (A = BTN_A, B = BTN_B) + push switch (BTN_PUSH).
- * RS_Poll_1ms() must be called every 1 ms (from SysTick_Handler).
+ * RS_Poll_1ms() must be called every 1 ms (from the INPUT task).
  * Turning while the button is held is reported separately (RS_GetHeldDelta) and
  * cancels the short/long press event for that press.
  */
@@ -40,6 +40,7 @@ typedef enum
 
 void RS_Init(void);
 void RS_Poll_1ms(void);
+uint8_t RS_Pending(void);        /* 1 = clicks or a button event are waiting */
 int16_t RS_GetDelta(void);      /* clicks since last call, +CW / -CCW */
 int16_t RS_GetHeldDelta(void);  /* clicks turned while the button was held down */
 RS_BtnEvent RS_GetButton(void); /* last button event, cleared on read */

@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "FuncGen.h"
+#include "App.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "usbd_cdc_if.h"
 
 #define UC_LINE_MAX    80U
@@ -61,6 +64,7 @@ static void flush(void)
 			s_out_len = 0;   /* terminal not reading: drop the reply */
 			return;
 		}
+		vTaskDelay(1);
 	}
 	memcpy(s_tx, s_out, s_out_len);
 	(void)CDC_Transmit_FS(s_tx, s_out_len);
@@ -226,6 +230,7 @@ static void print_help(void)
 	    "BURST <on_ms> <off_ms>   | BURST ON|OFF\r\n"
 	    "SAVE                write settings to flash\r\n"
 	    "? | STATUS          show settings\r\n"
+	    "MEM                 memory and stack use\r\n"
 	    "*IDN?\r\n");
 }
 
@@ -264,6 +269,11 @@ static const char *execute(char *line)
 	if (strcmp(cmd, "HELP") == 0)
 	{
 		print_help();
+		return NULL;
+	}
+	if (strcmp(cmd, "MEM") == 0)
+	{
+		App_MemReport(out);
 		return NULL;
 	}
 	if (strcmp(cmd, "F") == 0 || strcmp(cmd, "FREQ") == 0)
@@ -381,7 +391,7 @@ static const char *execute(char *line)
 
 /* ----------------------------------------------------------------- polling */
 
-void UC_Poll(void)
+static void poll(void)
 {
 	int16_t c;
 
@@ -400,7 +410,11 @@ void UC_Poll(void)
 			}
 			else
 			{
-				const char *err = execute(s_line);
+				const char *err;
+
+				App_Lock();              /* settings are shared with the UI task */
+				err = execute(s_line);
+				App_Unlock();
 				if (err == NULL)
 				{
 					out("OK\r\n");
@@ -432,5 +446,21 @@ void UC_Poll(void)
 				s_overflow = 1;
 			}
 		}
+	}
+}
+
+/* Called from the USB interrupt when data has been queued */
+void CDC_RxCallback(void)
+{
+	App_NotifyUsbFromISR();
+}
+
+void UC_Task(void *arg)
+{
+	(void)arg;
+	for (;;)
+	{
+		(void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+		poll();
 	}
 }

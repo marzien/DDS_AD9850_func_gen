@@ -21,7 +21,9 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *pcdHandle)
   if (pcdHandle->Instance == USB)
   {
     __HAL_RCC_USB_CLK_ENABLE();
-    HAL_NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 0, 0);
+    /* Priority 5: the interrupt calls FreeRTOS FromISR functions, so it must not be
+     * above configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY */
+    HAL_NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
   }
 }

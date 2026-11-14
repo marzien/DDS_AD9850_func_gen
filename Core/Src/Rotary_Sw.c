@@ -145,6 +145,11 @@ void RS_Poll_1ms(void)
 	}
 }
 
+uint8_t RS_Pending(void)
+{
+	return (uint8_t)((s_delta != 0) || (s_held_delta != 0) || (s_event != RS_BTN_NONE));
+}
+
 int16_t RS_GetDelta(void)
 {
 	int16_t d;

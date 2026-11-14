@@ -25,6 +25,7 @@ uint8_t CDC_Transmit_FS(uint8_t *Buf, uint16_t Len);
 int16_t CDC_ReadByte(void);          /* next byte, or -1 if none */
 uint8_t CDC_IsConnected(void);       /* 1 = enumerated by the host */
 uint8_t CDC_TxBusy(void);            /* 1 = previous transmit still running */
+void CDC_RxCallback(void);           /* weak; called from the USB interrupt on received data */
 /* USER CODE END EXPORTED_FUNCTIONS */
 
 #ifdef __cplusplus

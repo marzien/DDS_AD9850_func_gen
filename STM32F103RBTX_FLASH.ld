@@ -6,8 +6,8 @@ ENTRY(Reset_Handler)
 
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 
-_Min_Heap_Size  = 0x200;
-_Min_Stack_Size = 0x400;
+_Min_Heap_Size  = 0x100;  /* newlib only; FreeRTOS objects are static */
+_Min_Stack_Size = 0x600;  /* main stack: start-up code, then interrupts only */
 
 MEMORY
 {
@@ -16,6 +16,10 @@ MEMORY
      see Core/Inc/Flash_Store.h. Also fits the 64 KB STM32F103C8 (Blue Pill). */
   FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 63K
 }
+
+/* Region sizes for the run-time memory report (App_MemReport) */
+_flash_size = LENGTH(FLASH);
+_ram_size   = LENGTH(RAM);
 
 SECTIONS
 {

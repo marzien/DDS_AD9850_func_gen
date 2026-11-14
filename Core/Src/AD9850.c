@@ -5,10 +5,24 @@ static AD_CFG g_AD_CFG;
 static inline void pin_high(GPIO_TypeDef *port, uint32_t pin) { port->BSRR = pin; }
 static inline void pin_low(GPIO_TypeDef *port, uint32_t pin)  { port->BRR = pin; }
 
+/* At 72 MHz two back-to-back BSRR/BRR writes give a ~30 ns pulse, too short for
+ * long wires or the level shifter. Each ad_delay() is ~100-400 ns depending on
+ * optimisation (the AD9850 needs >= 3.5 ns for W_CLK/FQ_UD high/low and for data
+ * setup/hold). A full 40-bit word still takes < 50 us. */
+static inline void ad_delay(void)
+{
+	for (volatile uint8_t i = 0; i < 2U; i++)
+	{
+		__NOP();
+	}
+}
+
 static inline void pulse(GPIO_TypeDef *port, uint32_t pin)
 {
 	pin_high(port, pin);
+	ad_delay();
 	pin_low(port, pin);
+	ad_delay();
 }
 
 static void shift_bits(uint32_t value, uint8_t count)
@@ -23,6 +37,7 @@ static void shift_bits(uint32_t value, uint8_t count)
 		{
 			pin_low(g_AD_CFG.DATA_PORT, g_AD_CFG.DATA_PIN);
 		}
+		ad_delay(); /* data setup before W_CLK rises */
 		pulse(g_AD_CFG.W_CLK_PORT, g_AD_CFG.W_CLK_PIN);
 	}
 }

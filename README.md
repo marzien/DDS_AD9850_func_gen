@@ -5,6 +5,7 @@ a 20x4 HD44780 LCD with PCF8574 I2C backpack and an STM32F103RB.
 
 ## Features
 - 0 Hz – 40 MHz, 1 Hz resolution (125 MHz reference clock)
+- STM32 runs at 72 MHz (8 MHz crystal × 9, APB1 36 MHz, 48 MHz USB clock ready)
 - Phase offset in 11.25° steps
 - Output on/off (AD9850 power-down)
 - Linear frequency sweep (up or down), period 0.1 s – 60 s

@@ -11,6 +11,7 @@ a 20x4 HD44780 LCD with PCF8574 I2C backpack and an STM32F103RB.
 - Linear frequency sweep (up or down), period 0.1 s – 60 s
 - Burst / gated output: on for X ms, off for Y ms (1 ms – 60 s each), also during a sweep
 - Settings are saved to flash and restored at power-up
+- Text command interface over the Blue Pill micro-USB port (USB virtual COM port)
 - Outputs of the AD9850 module: **sine** on ZOUT1/ZOUT2, **square** on QOUT1/QOUT2
   (square duty cycle is set by the blue trimmer on the module). The AD9850 cannot
   generate triangle/sawtooth.
@@ -79,6 +80,35 @@ linker script limits program flash to 63 KB.
 
 LCD size is set by `LCD_COLS` / `LCD_ROWS` in `Core/Inc/I2C_LCD.h` (layout is designed for 20x4).
 
+## USB command interface
+Plug the Blue Pill micro-USB into a PC: it appears as a virtual COM port
+("AD9850 DDS Function Generator", VID 0483 / PID 5740; Windows 10/11 needs no driver).
+Open it with any terminal (PuTTY, Arduino serial monitor, Python `pyserial`); the baud rate
+does not matter. One command per line, case-insensitive; every command answers `OK` or `ERR ...`.
+
+| Command | Meaning |
+|---|---|
+| `F 1000`, `F 12.5k`, `F 7.1M` | set frequency (0 … 40 MHz), stops a running sweep |
+| `STEP 1k` | encoder step, power of ten 1 … 10M |
+| `PH 90` | phase in degrees (rounded to 11.25° steps) |
+| `OUT ON` / `OUT OFF` | output on/off |
+| `SWEEP 100 10k 2.5` | sweep 100 Hz → 10 kHz in 2.5 s and start it |
+| `SWEEP ON` / `SWEEP OFF` | start/stop the sweep with the stored settings |
+| `BURST 10 90` | burst: 10 ms on, 90 ms off, and start it |
+| `BURST ON` / `BURST OFF` | burst mode on/off |
+| `SAVE` | write settings to flash now (otherwise saved 3 s after the last change) |
+| `?` or `STATUS` | print all settings |
+| `*IDN?` | identification string |
+| `HELP` | list the commands |
+
+Remote changes update the LCD and are autosaved like changes made with the knob.
+Notes:
+- Some Blue Pills have a 10 kΩ resistor (R10) on USB D+ instead of 1.5 kΩ. If the PC does
+  not detect the board, add 1.8 kΩ between PA12 and 3.3 V (or replace R10 with 1.5 kΩ).
+- The firmware pulls D+ low for 20 ms at start-up so the PC re-detects the board after a reset.
+- With the carrier PCB, do not connect the PC USB and the 5 V DC jack at the same time
+  (the PC would supply the whole board through the Blue Pill 5V pin).
+
 ## Tuning
 In `Core/Inc/Rotary_Sw.h`:
 - `RS_STEPS_PER_DETENT` – 4 for KY-040 style encoders, 2 if one click counts double
@@ -102,3 +132,6 @@ square buffer, sync output, BNC connectors) is in [`Hardware/`](Hardware/README.
 - `Core/Src/Rotary_Sw.c` – encoder + button, polled from SysTick (1 ms)
 - `Core/Src/FuncGen.c` – user interface and sweep logic
 - `Core/Src/Flash_Store.c` – wear-levelled settings storage in flash
+- `Core/Src/UsbCmd.c` – USB command parser
+- `USB_DEVICE/` – USB CDC device glue (descriptors, low-level driver, virtual COM port)
+- `Middlewares/ST/STM32_USB_Device_Library/` – ST USB device library v2.11.6 (core + CDC)

@@ -6,17 +6,12 @@
 #include "I2C_LCD.h"
 #include "Rotary_Sw.h"
 #include "Flash_Store.h"
+#include "UsbCmd.h"
 
-#define FG_MAX_FREQ        AD_MAX_FREQ
-#define FG_MAX_DIGIT       7U    /* 10^7 = 10 MHz step */
 #define FG_SWEEP_UPDATE_MS 5U    /* DDS update rate while sweeping */
 #define FG_SWEEP_LCD_MS    500U  /* LCD refresh rate while sweeping */
-#define FG_SWT_MIN         1U    /* sweep time, units of 0.1 s */
-#define FG_SWT_MAX         600U
 #define FG_SAVE_DELAY_MS   3000U /* save settings this long after the last input */
 #define FG_SET_VERSION     2U    /* bump when FG_Settings changes */
-#define FG_BURST_MIN_MS    1U    /* burst on/off time limits */
-#define FG_BURST_MAX_MS    60000U
 
 typedef enum { SCR_MAIN = 0, SCR_MENU } FG_Screen;
 
@@ -37,21 +32,6 @@ typedef enum
 
 static const char *const k_menu_names[MI_COUNT] = {
 	"Output", "Phase", "Burst", "On time", "Off time", "Sweep", "Sw start", "Sw stop", "Sw time", "Exit"};
-
-typedef struct
-{
-	uint32_t freq;       /* Hz */
-	uint32_t sw_start;   /* Hz */
-	uint32_t sw_stop;    /* Hz */
-	uint16_t sw_time_ds; /* sweep period, 0.1 s units */
-	uint16_t bu_on_ms;   /* burst: output on time */
-	uint16_t bu_off_ms;  /* burst: output off time */
-	uint8_t  phase;      /* 0..31, 11.25 deg steps */
-	uint8_t  digit;      /* main screen edit digit, step = 10^digit */
-	uint8_t  out_on;
-	uint8_t  sweep_on;
-	uint8_t  burst_on;
-} FG_Settings;
 
 typedef char fg_settings_size_check[(sizeof(FG_Settings) <= FS_MAX_PAYLOAD) ? 1 : -1];
 
@@ -747,12 +727,49 @@ void FG_Init(I2C_HandleTypeDef *hi2c)
 	s_dirty = 1;
 }
 
+/* ---------------------------------------------- API for remote commands */
+
+FG_Settings *FG_GetSettings(void)
+{
+	return &s_set;
+}
+
+void FG_SettingsChanged(void)
+{
+	fg_apply_output();
+	s_dirty = 1;
+	s_save_pending = 1;
+	s_last_input = HAL_GetTick();
+}
+
+uint8_t FG_SaveNow(void)
+{
+	s_save_pending = 0;
+	if (memcmp(&s_set, &s_saved, sizeof(s_set)) == 0)
+	{
+		return 1;
+	}
+	if (FS_Save(&s_set, sizeof(s_set), FG_SET_VERSION) == HAL_OK)
+	{
+		memcpy(&s_saved, &s_set, sizeof(s_saved));
+		return 1;
+	}
+	return 0;
+}
+
+uint32_t FG_OutputFreq(void)
+{
+	return (s_set.sweep_on && s_set.out_on) ? s_cur_freq : s_set.freq;
+}
+
 void FG_Task(void)
 {
 	int16_t d = RS_GetDelta();
 	int16_t hd = RS_GetHeldDelta();
 	RS_BtnEvent b = RS_GetButton();
 	uint32_t now;
+
+	UC_Poll(); /* USB virtual COM port commands */
 
 	if (d != 0 || hd != 0 || b != RS_BTN_NONE)
 	{
